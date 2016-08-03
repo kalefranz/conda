@@ -128,6 +128,10 @@ test_yaml_raw = {
 }
 
 
+def make_key(appname, key):
+    return "{0}_{1}".format(appname.upper(), key.upper())
+
+
 class TestConfiguration(Configuration):
     always_yes = PrimitiveParameter(False, aliases=('always_yes_altname1', 'yes',
                                                     'always_yes_altname2'))
@@ -173,8 +177,6 @@ class ConfigurationTests(TestCase):
         assert config.changeps1 is True
 
     def test_env_var_config(self):
-        def make_key(appname, key):
-            return "{0}_{1}".format(appname.upper(), key.upper())
         appname = "myapp"
         test_dict = {}
         test_dict[make_key(appname, 'always_yes')] = 'yes'
@@ -191,8 +193,6 @@ class ConfigurationTests(TestCase):
             [environ.pop(key) for key in test_dict]
 
     def test_env_var_config_alias(self):
-        def make_key(appname, key):
-            return "{0}_{1}".format(appname.upper(), key.upper())
         appname = "myapp"
         test_dict = {}
         test_dict[make_key(appname, 'yes')] = 'yes'
@@ -207,6 +207,20 @@ class ConfigurationTests(TestCase):
             assert config.changeps1 is False
         finally:
             [environ.pop(key) for key in test_dict]
+
+    def test_env_var_sequence(self):
+        appname = "myapp"
+        test_dict = {}
+        test_dict[make_key(appname, 'channels')] = 'channel1,channel2'
+
+        try:
+            environ.update(test_dict)
+            assert 'MYAPP_CHANNELS' in environ
+            config = TestConfiguration()._add_env_vars(appname)
+            assert config.channels == ('channel1', 'channel2')
+        finally:
+            [environ.pop(key) for key in test_dict]
+
 
     def test_load_raw_configs(self):
         try:

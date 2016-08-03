@@ -4,7 +4,7 @@ A generalized application configuration utility.
 
 Features include:
   - lazy eval
-  - merges configuration files
+  - merges configuration sources
   - parameter type validation, with custom validation
   - parameter aliases
 
@@ -184,7 +184,7 @@ class RawParameter(object):
         return text_type(vars(self))
 
     @abstractmethod
-    def value(self, parameter_type):
+    def value(self, parameter_object):
         raise NotImplementedError()
 
     @abstractmethod
@@ -192,7 +192,7 @@ class RawParameter(object):
         raise NotImplementedError()
 
     @abstractmethod
-    def valueflags(self, parameter_type):
+    def valueflags(self, parameter_object):
         raise NotImplementedError()
 
     @classmethod
@@ -205,18 +205,21 @@ class RawParameter(object):
 class EnvRawParameter(RawParameter):
     source = 'envvars'
 
-    def value(self, parameter_type):
-        return self.__important_split_value[0].strip()
+    def value(self, parameter_object):
+        if isinstance(parameter_object, SequenceParameter):
+            return self._raw_value.split(parameter_object._delimiter)
+        else:
+            return self.__final_split_value[0].strip()
 
     def keyflag(self):
-        return ParameterFlag.final if len(self.__important_split_value) >= 2 else None
+        return ParameterFlag.final if len(self.__final_split_value) >= 2 else None
 
-    def valueflags(self, parameter_type):
-        return None
+    def valueflags(self, parameter_object):
+        return () if isinstance(parameter_object, SequenceParameter) else None
 
     @property
-    def __important_split_value(self):
-        return self._raw_value.split("!important")
+    def __final_split_value(self):
+        return self._raw_value.split("!final")
 
     @classmethod
     def make_raw_parameters(cls, appname):
@@ -229,13 +232,13 @@ class EnvRawParameter(RawParameter):
 class ArgParseRawParameter(RawParameter):
     source = 'cmd_line'
 
-    def value(self, parameter_type):
+    def value(self, parameter_object):
         return make_immutable(self._raw_value)
 
     def keyflag(self):
         return None
 
-    def valueflags(self, parameter_type):
+    def valueflags(self, parameter_object):
         return None
 
     @classmethod
@@ -251,18 +254,18 @@ class YamlRawParameter(RawParameter):
         self._keycomment = keycomment
         super(YamlRawParameter, self).__init__(source, key, raw_value)
 
-    def value(self, parameter_type):
-        self.__process(parameter_type)
+    def value(self, parameter_object):
+        self.__process(parameter_object)
         return self._value
 
     def keyflag(self):
         return ParameterFlag.from_string(self._keycomment)
 
-    def valueflags(self, parameter_type):
-        self.__process(parameter_type)
+    def valueflags(self, parameter_object):
+        self.__process(parameter_object)
         return self._valueflags
 
-    def __process(self, parameter_type):
+    def __process(self, parameter_object):
         if hasattr(self, '_value'):
             return
         elif isinstance(self._raw_value, CommentedSeq):
@@ -471,8 +474,7 @@ class Parameter(object):
     def _str_format_flag(flag):
         return "  #!%s" % flag if flag is not None else ''
 
-    @classmethod
-    def repr_raw(cls, raw_parameter):
+    def repr_raw(self, raw_parameter):
         raise NotImplementedError()
 
 
@@ -501,17 +503,16 @@ class PrimitiveParameter(Parameter):
     def _merge(self, matches):
         important_match = first(matches, self._match_key_is_important, default=None)
         if important_match is not None:
-            return important_match.value(self.__class__)
+            return important_match.value(self)
 
         last_match = last(matches, lambda x: x is not None, default=None)
         if last_match is not None:
-            return last_match.value(self.__class__)
+            return last_match.value(self)
         raise ThisShouldNeverHappenError()  # pragma: no cover
 
-    @classmethod
-    def repr_raw(cls, raw_parameter):
-        return "%s: %s%s" % (raw_parameter.key, raw_parameter.value(cls),
-                             cls._str_format_flag(raw_parameter.keyflag()))
+    def repr_raw(self, raw_parameter):
+        return "%s: %s%s" % (raw_parameter.key, raw_parameter.value(self),
+                             self._str_format_flag(raw_parameter.keyflag()))
 
 
 class SequenceParameter(Parameter):
@@ -520,7 +521,7 @@ class SequenceParameter(Parameter):
     """
     _type = tuple
 
-    def __init__(self, element_type, default=(), aliases=(), validation=None):
+    def __init__(self, element_type, default=(), aliases=(), validation=None, delimiter=','):
         """
         Args:
             element_type (type or Iterable[type]): The generic type of each element in
@@ -532,6 +533,7 @@ class SequenceParameter(Parameter):
 
         """
         self._element_type = element_type
+        self._delimiter = delimiter
         super(SequenceParameter, self).__init__(default, aliases, validation)
 
     def collect_errors(self, instance, value, source="<<merged>>"):
@@ -553,8 +555,7 @@ class SequenceParameter(Parameter):
         # these will be prepended to the final result
         def get_marked_lines(match, marker):
             return tuple(line
-                         for line, flag in zip(match.value(self.__class__),
-                                               match.valueflags(self.__class__))
+                         for line, flag in zip(match.value(self), match.valueflags(self))
                          if flag is marker)
         top_lines = concat(get_marked_lines(m, ParameterFlag.top) for m in relevant_matches)
 
@@ -565,7 +566,7 @@ class SequenceParameter(Parameter):
 
         # now, concat all lines, while reversing the matches
         #   reverse because elements closer to the end of search path take precedence
-        all_lines = concat(m.value(self.__class__) for m in reversed(relevant_matches))
+        all_lines = concat(m.value(self) for m in reversed(relevant_matches))
 
         # stack top_lines + all_lines, then de-dupe
         top_deduped = tuple(unique(concatv(top_lines, all_lines)))
@@ -579,14 +580,12 @@ class SequenceParameter(Parameter):
         # just reverse, and we're good to go
         return tuple(reversed(tuple(bottom_deduped)))
 
-    @classmethod
-    def repr_raw(cls, raw_parameter):
+    def repr_raw(self, raw_parameter):
         lines = list()
-        lines.append("%s:%s" % (raw_parameter.key,
-                                cls._str_format_flag(raw_parameter.keyflag())))
-        for q, value in enumerate(raw_parameter.value(cls)):
-            valueflag = raw_parameter.valueflags(cls)[q]
-            lines.append("  - %s%s" % (value, cls._str_format_flag(valueflag)))
+        lines.append("%s:%s" % (raw_parameter.key, self._str_format_flag(raw_parameter.keyflag())))
+        for q, value in enumerate(raw_parameter.value(self)):
+            valueflag = raw_parameter.valueflags(self)[q]
+            lines.append("  - %s%s" % (value, self._str_format_flag(valueflag)))
         return '\n'.join(lines)
 
 
@@ -623,24 +622,21 @@ class MapParameter(Parameter):
 
         # mapkeys with important matches
         def key_is_important(match, key):
-            return match.valueflags(self.__class__).get(key) is ParameterFlag.final
+            return match.valueflags(self).get(key) is ParameterFlag.final
         important_maps = tuple(dict((k, v)
-                                    for k, v in iteritems(match.value(self.__class__))
+                                    for k, v in iteritems(match.value(self))
                                     if key_is_important(match, k))
                                for match in relevant_matches)
         # dump all matches in a dict
         # then overwrite with important matches
-        return merge(concatv((m.value(self.__class__) for m in relevant_matches),
-                             reversed(important_maps)))
+        return merge(concatv((m.value(self) for m in relevant_matches), reversed(important_maps)))
 
-    @classmethod
-    def repr_raw(cls, raw_parameter):
+    def repr_raw(self, raw_parameter):
         lines = list()
-        lines.append("%s:%s" % (raw_parameter.key,
-                                cls._str_format_flag(raw_parameter.keyflag())))
-        for valuekey, value in iteritems(raw_parameter.value(cls)):
-            valueflag = raw_parameter.valueflags(cls).get(valuekey)
-            lines.append("  %s:%s%s" % (valuekey, value, cls._str_format_flag(valueflag)))
+        lines.append("%s:%s" % (raw_parameter.key, self._str_format_flag(raw_parameter.keyflag())))
+        for valuekey, value in iteritems(raw_parameter.value(self)):
+            valueflag = raw_parameter.valueflags(self).get(valuekey)
+            lines.append("  %s:%s%s" % (valuekey, value, self._str_format_flag(valueflag)))
         return '\n'.join(lines)
 
 
@@ -703,7 +699,7 @@ class Configuration(object):
 
             if match is not None:
                 try:
-                    typed_value = typify_data_structure(match.value(parameter.__class__),
+                    typed_value = typify_data_structure(match.value(parameter),
                                                         parameter._element_type)
                 except TypeCoercionError as e:
                     validation_errors.append(CustomValidationError(match.key, e.value,
