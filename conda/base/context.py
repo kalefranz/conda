@@ -66,7 +66,8 @@ class Context(Configuration):
     create_default_packages = SequenceParameter(string_types)
     disallow = SequenceParameter(string_types)
     ssl_verify = PrimitiveParameter(True, parameter_type=string_types + (bool,))
-    client_cert = MapParameter(string_types)
+    client_cert = PrimitiveParameter('')
+    client_cert_key = PrimitiveParameter('')
     track_features = SequenceParameter(string_types)
     use_pip = PrimitiveParameter(True)
     proxy_servers = MapParameter(string_types)
@@ -237,9 +238,12 @@ def get_help_dict():
             # ssl_verify can be a boolean value or a filename string
             """),
         'client_cert': dals("""
-            # client_cert can have a 'cert' key pointing to a single file
-            # (containing the private key and the certificate) or both 'cert'
-            # and 'key' keys pointing to the individual files
+            # client_cert can be a path pointing to a single file
+            # containing the private key and the certificate (e.g. .pem),
+            # or use 'client_cert_key' in conjuction with 'client_cert' for individual files
+            """),
+        'client_cert_key': dals("""
+            # used in conjunction with 'client_cert' for a matching key file
             """),
         'track_features': dals("""
             """),
