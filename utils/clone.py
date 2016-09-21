@@ -190,6 +190,21 @@ class Repo(object):
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="conda-clone",
+        description='Process some integers.'
+    )
+    parser.add_argument('integers', metavar='N', type=int, nargs='+',
+                        help='an integer for the accumulator')
+    parser.add_argument('--sum', dest='accumulate', action='store_const',
+                        const=sum, default=max,
+                        help='sum the integers (default: find the max)')
+
+    args = parser.parse_args()
+    print(args.accumulate(args.integers))
+
     try:
         set_logger("repo-clone", logging.DEBUG)
         repo_name = sys.argv[1] if len(sys.argv) >= 2 else 'default'
