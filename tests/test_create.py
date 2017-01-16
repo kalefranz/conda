@@ -38,7 +38,8 @@ from conda.cli.main_update import configure_parser as update_configure_parser
 from conda.common.compat import itervalues, text_type
 from conda.common.io import captured, disable_logger, replace_log_streams, stderr_log_level, \
     env_var
-from conda.common.path import get_bin_directory_short_path, get_python_site_packages_short_path, pyc_path
+from conda.common.path import get_bin_directory_short_path, get_python_site_packages_short_path, pyc_path, \
+    get_major_minor_version
 from conda.common.url import path_to_url
 from conda.common.yaml import yaml_load
 from conda.core.index import create_cache_dir
@@ -941,6 +942,7 @@ class IntegrationTests(TestCase):
                 run_command(Commands.INSTALL, prefix, "-c conda-forge toolz cytoolz")
                 assert_package_is_installed(prefix, 'toolz-')
 
+    @pytest.mark.skipif(on_win, reason="no bokeh pytest-selenium package for windows")
     def test_old_style_noarch_install(self):
         with make_temp_env("-c bokeh pytest-selenium=1.6") as prefix:
             pytest_selenium_tuple = get_conda_list_tuple(prefix, "pytest-selenium")
@@ -948,8 +950,9 @@ class IntegrationTests(TestCase):
             assert pytest_selenium_tuple[1] == "1.6.0"  # if this line failes, that means something has changed at https://anaconda.org/bokeh/pytest-selenium/files
             assert pytest_selenium_tuple[3] == "bokeh"
 
-            pyver = get_python_version_for_prefix(prefix)
-            site_packages = get_python_site_packages_short_path(pyver)
+            pyver = get_major_minor_version(get_python_version_for_prefix(prefix))
+            site_packages_short_path = get_python_site_packages_short_path(pyver)
+            assert exists join(prefix, site_packages_short_path, '')
 
 
 
