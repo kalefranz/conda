@@ -190,6 +190,17 @@ class Solver(object):
 
         index, r = self._prepare(prepared_specs)
 
+        with Spinner("Solving environment", not context.verbosity and not context.quiet,
+                     context.json):
+            return self._solve_final_state(
+                specs_to_add, specs_to_remove, update_modifier, deps_modifier,
+                prune, specs_from_history_map, solution, specs_map, ignore_pinned,
+                prefix_data, r
+            )
+
+    def _solve_final_state(self, specs_to_add, specs_to_remove, update_modifier, deps_modifier,
+                           prune, specs_from_history_map, solution, specs_map, ignore_pinned,
+                           prefix_data, r):
         if specs_to_remove:
             # In a previous implementation, we invoked SAT here via `r.remove()` to help with
             # spec removal, and then later invoking SAT again via `r.solve()`. Rather than invoking
@@ -494,15 +505,13 @@ class Solver(object):
             # the integration level in the PrivateEnvIntegrationTests in test_create.py.
             raise NotImplementedError()
         else:
-            with Spinner("Solving environment", not context.verbosity and not context.quiet,
-                         context.json):
-                unlink_precs, link_precs = self.solve_for_diff(update_modifier, deps_modifier,
-                                                               prune, ignore_pinned,
-                                                               force_remove, force_reinstall)
-                stp = PrefixSetup(self.prefix, unlink_precs, link_precs,
-                                  self.specs_to_remove, self.specs_to_add)
-                # TODO: Only explicitly requested remove and update specs are being included in
-                #   History right now. Do we need to include other categories from the solve?
+            unlink_precs, link_precs = self.solve_for_diff(update_modifier, deps_modifier,
+                                                           prune, ignore_pinned,
+                                                           force_remove, force_reinstall)
+            stp = PrefixSetup(self.prefix, unlink_precs, link_precs,
+                              self.specs_to_remove, self.specs_to_add)
+            # TODO: Only explicitly requested remove and update specs are being included in
+            #   History right now. Do we need to include other categories from the solve?
 
             self._notify_conda_outdated(link_precs)
             return UnlinkLinkTransaction(stp)
@@ -569,10 +578,11 @@ class Solver(object):
                 channel = spec.get_exact_value('channel')
                 if channel:
                     additional_channels.add(Channel(channel))
-
-            self.channels.update(additional_channels)
-            reduced_index = get_reduced_index(self.prefix, self.channels,
-                                              self.subdirs, prepared_specs)
+            with Spinner("Collecting channel metadata", not context.verbosity and not context.quiet,
+                         context.json):
+                self.channels.update(additional_channels)
+                reduced_index = get_reduced_index(self.prefix, self.channels,
+                                                  self.subdirs, prepared_specs)
             self._prepared_specs = prepared_specs
             self._index = reduced_index
             self._r = Resolve(reduced_index, channels=self.channels)
