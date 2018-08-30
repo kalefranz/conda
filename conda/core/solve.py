@@ -591,8 +591,7 @@ class Solver(object):
 
             self.channels.update(additional_channels)
             reduced_index = get_reduced_index(self.prefix, self.channels,
-                                              self.subdirs, prepared_specs,
-                                              context.strict_channel_priority)
+                                              self.subdirs, prepared_specs)
             self._prepared_specs = prepared_specs
             self._index = reduced_index
             self._r = Resolve(reduced_index, channels=self.channels)
