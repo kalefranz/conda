@@ -16,11 +16,11 @@ from .subdir_data import SubdirData
 from .. import CondaError, __version__ as CONDA_VERSION
 from .._vendor.auxlib.ish import dals
 from .._vendor.boltons.setutils import IndexedSet
-from ..base.constants import DepsModifier, UNKNOWN_CHANNEL, UpdateModifier
+from ..base.constants import ChannelPriority, DepsModifier, UNKNOWN_CHANNEL, UpdateModifier
 from ..base.context import context
 from ..common.compat import iteritems, itervalues, odict, text_type
 from ..common.constants import NULL
-from ..common.io import time_recorder, Spinner
+from ..common.io import Spinner, time_recorder
 from ..common.path import get_major_minor_version, paths_equal
 from ..exceptions import PackagesNotFoundError
 from ..gateways.logging import TRACE
@@ -343,6 +343,8 @@ class Solver(object):
             pinned_specs,
         ))
 
+        strict_channel_priority = context.channel_priority == ChannelPriority.STRICT
+
         # We've previously checked `solution` for consistency (which at that point was the
         # pre-solve state of the environment). Now we check our compiled set of
         # `final_environment_specs` for the possibility of a solution.  If there are conflicts,
@@ -350,7 +352,7 @@ class Solver(object):
         # constraint) and also making them optional. The result here will be less cases of
         # `UnsatisfiableError` handed to users, at the cost of more packages being modified
         # or removed from the environment.
-        conflicting_specs = r.get_conflicting_specs(tuple(final_environment_specs))
+        conflicting_specs = r.get_conflicting_specs(tuple(final_environment_specs), strict_channel_priority)
         if log.isEnabledFor(DEBUG):
             log.debug("conflicting specs: %s", dashlist(conflicting_specs))
         for spec in conflicting_specs:
@@ -363,7 +365,7 @@ class Solver(object):
         if log.isEnabledFor(DEBUG):
             log.debug("final specs to add: %s",
                       dashlist(sorted(text_type(s) for s in final_environment_specs)))
-        solution = r.solve(tuple(final_environment_specs))  # return value is List[PackageRecord]
+        solution = r.solve(tuple(final_environment_specs), strict_channel_priority=strict_channel_priority)
 
         # add back inconsistent packages to solution
         if add_back_map:
